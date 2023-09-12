@@ -1,0 +1,530 @@
+import os.path
+
+samples = []
+#glob_wildcards("../input/{sample}.cram").sample
+
+with open("../input/trios.samples") as samples_file:
+    for line in samples_file:
+        samples.append(line[:-1])
+
+#samples = ['GLE_1100638258']
+#samples = ['GLE_8343069340','GLE_6112821935','GLE_2816585663','GLE_3169328247','GLE_1966241885','GLE_1829520496','GLE_1152977810','GLE_5799999129_D2','GLE_2151804401','GLE_9737928566','GLE_7927806660','GLE_9097528463','GLE_8838072912','GLE_4225326853','GLE_8438071884']
+groups = glob_wildcards("../resources/intervals/intervalfile_{group}.list").group
+#groups = ['0_samll','1_samll']
+chroms=['1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16','17','18','19','20','21','22','X','Y']
+#chroms=['1']
+
+rule all:
+    input:
+        "../output/merged_vcfs/annovar/joint.multisplit.VQSR.CGP.ann.vep.DNM.spliceAI.annotated.hg38_multianno.txt.reorder.vcf",
+
+rule haplotype_caller:
+    input:
+        cram="../input/{sample}.cram",
+        ref="../resources/Homo_sapiens_assembly38.fasta",
+        interval="../resources/intervals/intervalfile_{group}.list",
+    output:
+        "../output/haplotype_caller/{sample}/{sample}_{group}.g.vcf.gz",
+    log:
+        o="../logs/haplotype_caller/{sample}/{sample}_{group}.log",
+        e="../logs/haplotype_caller/{sample}/{sample}_{group}.err",
+    params:
+        java="--java-options \"-Xms4G -Xmx4G -XX:ParallelGCThreads=1 -Djava.io.tmpdir=$TMPDIR\"",
+    resources:
+        walltime=8,
+    conda:
+        "/home/azoopatel/miniconda3/envs/snakemake/",
+    threads: 1
+    shell:
+        "module load GenomeAnalysisTK && "
+        "gatk {params.java} HaplotypeCaller "
+        "-R {input.ref} "
+        "-I {input.cram} "
+        "-O {output} "
+        "--intervals {input.interval} "
+        "-ERC GVCF > {log.o} 2> {log.e}"
+
+
+def get_combine_gvcfs(wildcards):
+    out_list = ['']
+    out_list += expand("../output/haplotype_caller/{sample}/{sample}_" + wildcards.group + ".g.vcf.gz",sample=samples)
+    return " --variant ".join(out_list)
+
+rule combine_gvcfs:
+    input:
+        gvcfs=expand("../output/haplotype_caller/{sample}/{sample}_{{group}}.g.vcf.gz",sample=samples),
+        ref="../resources/Homo_sapiens_assembly38.fasta",
+        interval="../resources/intervals/intervalfile_{group}.list",
+    output:
+        "../output/combined_gvcfs/{group}.g.vcf.gz",
+    log:
+        o="../logs/combine_gvcfs/{group}.log",
+        e="../logs/combine_gvcfs/{group}.err",
+    params:
+        java="--java-options \"-Xms63G -Xmx63G -XX:ParallelGCThreads=4 -Djava.io.tmpdir=$TMPDIR\"",
+        tmpdir="$TMPDIR",
+        gvcfs=get_combine_gvcfs,
+    resources:
+        walltime=8,
+        mem_mb=64000,
+    conda:
+        "/home/azoopatel/miniconda3/envs/snakemake/",
+    threads: 4
+    shell:
+        "module load GenomeAnalysisTK && "
+        "gatk {params.java} CombineGVCFs "
+        "{params.gvcfs} "
+        "--reference {input.ref} "
+        "--intervals {input.interval} "
+        "--tmp-dir {params.tmpdir} "
+        "--output {output} > {log.o} 2> {log.e}"
+
+
+rule genotype_gvcfs:
+    input:
+        gvcf="../output/combined_gvcfs/{group}.g.vcf.gz",
+        ref="../resources/Homo_sapiens_assembly38.fasta",
+        interval="../resources/intervals/intervalfile_{group}.list",
+    output:
+        "../output/genotyped_vcfs/{group}.genotyped.vcf.gz",
+    log:
+        o="../logs/genotype_gvcfs/{group}.log",
+        e="../logs/genotype_gvcfs/{group}.err",
+    params:
+        java="--java-options \"-Xms63G -Xmx63G -XX:ParallelGCThreads=4 -Djava.io.tmpdir=$TMPDIR\"",
+        tmpdir="$TMPDIR",
+    resources:
+        walltime=8,
+        mem_mb=64000,
+    conda:
+        "/home/azoopatel/miniconda3/envs/snakemake/",
+    threads: 4
+    shell:
+        "module load GenomeAnalysisTK && "
+        "gatk {params.java} GenotypeGVCFs "
+        "--variant {input.gvcf} "
+        "--reference {input.ref} "
+        "--intervals {input.interval} "
+        "--tmp-dir {params.tmpdir} "
+        "--use-jdk-inflater "
+        "--use-jdk-deflater "
+        "--output {output} > {log.o} 2> {log.e}"
+
+def get_merge_vcfs(wildcards):
+    out_list = ['']
+    out_list += expand("../output/genotyped_vcfs/{group}.genotyped.vcf.gz",group=groups)
+    return " I=".join(out_list)
+
+rule merge_vcfs:
+    input:
+        vcf=expand("../output/genotyped_vcfs/{group}.genotyped.vcf.gz",group=groups),
+    output:
+        "../output/merged_vcfs/joint.vcf.gz",
+    log:
+        o="../logs/merged_vcfs/merge_vcfs.log",
+        e="../logs/merged_vcfs/merge_vcfs.err",
+    params:
+        java="-Xms4G -Xmx4G",
+        vcfs=get_merge_vcfs,
+    resources:
+        walltime=8,
+    conda:
+        "/home/azoopatel/miniconda3/envs/snakemake/",
+    threads: 4
+    shell:
+        "java {params.java} -jar /home/dantakli/bin/picard-2.20.7/picard.jar MergeVcfs "
+        "{params.vcfs} "
+        "O={output} > {log.o} 2> {log.e}"
+
+rule multisplit:
+    input:
+        "../output/merged_vcfs/joint.vcf.gz",
+    output:
+        "../output/merged_vcfs/joint.multisplit.vcf.gz",
+    log:
+        o="../logs/merged_vcfs/multisplit.log",
+        e="../logs/merged_vcfs/multisplit.err",
+    resources:
+        walltime=8,
+    threads: 1
+    conda:
+        "/home/azoopatel/miniconda3/envs/snakemake/",
+    shell:
+        "module load bcftools && "
+        "bcftools norm -m -any {input} -O z -o {output} > {log.o} 2> {log.e} && "
+        "module load samtools && "
+        "tabix -p vcf {output} >> {log.o} 2>> {log.e}"
+
+rule snp_VQSR:
+    input:
+        vcf="../output/merged_vcfs/joint.multisplit.vcf.gz",
+        ref="../resources/Homo_sapiens_assembly38.fasta",
+        hapmap="../resources/hapmap_3.3.hg38.vcf.gz",
+        omni="../resources/1000G_omni2.5.hg38.vcf.gz",
+        t000G="../resources/1000G_phase1.snps.high_confidence.hg38.vcf.gz",
+        dbsnp="../resources/dbsnp_146.hg38.vcf.gz",
+    output:
+        recal="../output/merged_vcfs/joint.multisplit.snps.recal",
+        tranches="../output/merged_vcfs/joint.multisplit.snps.tranches",
+    log:
+        o="../logs/merged_vcfs/snp_VQSR.log",
+        e="../logs/merged_vcfs/snp_VQSR.err",
+    params:
+        rfile="/oasis/tscc/scratch/hiyoothere/NTD/4.Analysis/1.HC/0.gvcf/5.VQSR/snp_recal/joint.snps.output.plots.R",
+        hapmap="hapmap,known=false,training=true,truth=true,prior=15.0:",
+        omni="omni,known=false,training=true,truth=false,prior=12.0:",
+        t000G="t000G,known=false,training=true,truth=false,prior=10.0:",
+        dbsnp="dbsnp,known=true,training=false,truth=false,prior=2.0:",
+        extra="-an QD -an MQ -an MQRankSum -an ReadPosRankSum -an FS -an SOR -mode SNP"
+    threads: 4
+    conda:
+        "/home/azoopatel/miniconda3/envs/snakemake/",
+    resources:
+        walltime=48,
+    shell:
+        "module load GenomeAnalysisTK && "
+        "gatk VariantRecalibrator "
+        "-R {input.ref} "
+        "-V {input.vcf} "
+        "--resource {params.hapmap}{input.hapmap} "
+        "--resource {params.omni}{input.omni} "
+        "--resource {params.t000G}{input.t000G} "
+        "--resource {params.dbsnp}{input.dbsnp} "
+        "{params.extra} "
+        "-O {output.recal} "
+        "--tranches-file {output.tranches} > {log.o} 2> {log.e}"
+
+rule snp_apply_VQSR:
+    input:
+        vcf="../output/merged_vcfs/joint.multisplit.vcf.gz",
+        ref="../resources/Homo_sapiens_assembly38.fasta",
+        recal="../output/merged_vcfs/joint.multisplit.snps.recal",
+        tranches="../output/merged_vcfs/joint.multisplit.snps.tranches",
+    output:
+        vcf="../output/merged_vcfs/joint.multisplit.snp_recaled.vcf.gz",
+    log:
+        o="../logs/merged_vcfs/apply_snp_VQSR.log",
+        e="../logs/merged_vcfs/apply_snp_VQSR.err",
+    threads: 4
+    conda:
+        "/home/azoopatel/miniconda3/envs/snakemake/",
+    resources:
+        walltime=48,
+    shell:
+        "module load GenomeAnalysisTK && "
+        "gatk ApplyVQSR "
+        "-R {input.ref} "
+        "-V {input.vcf} "
+        "-O {output.vcf} "
+        "--truth-sensitivity-filter-level 99.7 "
+        "--tranches-file {input.tranches} "
+        "--recal-file {input.recal} "
+        "-mode SNP > {log.o} 2> {log.e}"
+
+rule indel_VQSR:
+    input:
+        vcf="../output/merged_vcfs/joint.multisplit.vcf.gz",
+        ref="../resources/Homo_sapiens_assembly38.fasta",
+        mills="../resources/Mills_and_1000G_gold_standard.indels.hg38.vcf.gz",
+        axiom="../resources/Axiom_Exome_Plus.genotypes.all_populations.poly.hg38.vcf.gz",
+        dbsnp="../resources/dbsnp_146.hg38.vcf.gz",
+    output:
+        recal="../output/merged_vcfs/joint.multisplit.indel.recal",
+        tranches="../output/merged_vcfs/joint.multisplit.indel.tranches",
+    log:
+        o="../logs/merged_vcfs/indel_VQSR.log",
+        e="../logs/merged_vcfs/indel_VQSR.err",
+    params:
+        rfile="/oasis/tscc/scratch/hiyoothere/NTD/4.Analysis/1.HC/0.gvcf/5.VQSR/snp_recal/joint.indels.output.plots.R",
+        mills="mills,known=false,training=true,truth=true,prior=12.0:",
+        axiom="axiom,known=false,training=true,truth=false,prior=10.0:",
+        dbsnp="dbsnp,known=true,training=false,truth=false,prior=2.0:",
+        extra="-an QD  -an MQRankSum -an ReadPosRankSum -an FS -an SOR -mode INDEL "
+    threads: 4
+    conda:
+        "/home/azoopatel/miniconda3/envs/snakemake/",
+    resources:
+        walltime=48,
+    shell:
+        "module load GenomeAnalysisTK && "
+        "gatk VariantRecalibrator "
+        "-R {input.ref} "
+        "-V {input.vcf} "
+        "--resource {params.mills}{input.mills} "
+        "--resource {params.axiom}{input.axiom} "
+        "--resource {params.dbsnp}{input.dbsnp} "
+        "{params.extra} "
+        "-O {output.recal} "
+        "--tranches-file {output.tranches} > {log.o} 2> {log.e}"
+
+rule indel_apply_VQSR:
+    input:
+        vcf="../output/merged_vcfs/joint.multisplit.snp_recaled.vcf.gz",
+        ref="../resources/Homo_sapiens_assembly38.fasta",
+        recal="../output/merged_vcfs/joint.multisplit.indel.recal",
+        tranches="../output/merged_vcfs/joint.multisplit.indel.tranches",
+    output:
+        vcf="../output/merged_vcfs/joint.multisplit.VQSR.vcf.gz",
+    log:
+        o="../logs/merged_vcfs/apply_indel_VQSR.log",
+        e="../logs/merged_vcfs/apply_indel_VQSR.err",
+    threads: 4
+    conda:
+        "/home/azoopatel/miniconda3/envs/snakemake/",
+    resources:
+        walltime=48,
+    shell:
+        "module load GenomeAnalysisTK && "
+        "gatk ApplyVQSR "
+        "-R {input.ref} "
+        "-V {input.vcf} "
+        "-O {output.vcf} "
+        "--truth-sensitivity-filter-level 99.0 "
+        "--tranches-file {input.tranches} "
+        "--recal-file {input.recal} "
+        "-mode INDEL > {log.o} 2> {log.e}"
+
+
+rule CGP:
+    input:
+        hapmap="../resources/hapmap_3.3.hg38.vcf.gz",
+        ped="../input/trios.ped",
+        vcf="../output/merged_vcfs/joint.multisplit.VQSR.vcf.gz",        
+    output:
+        vcf="../output/merged_vcfs/CGP/joint.multisplit.VQSR.CGP.chr{chrom}.vcf.gz",
+    params:
+        chr="{chrom}",
+        java="--java-options \"-Xmx4G \"",
+    log:
+        o="../logs/CGP/chr{chrom}.log",
+        e="../logs/CGP/chr{chrom}.err",
+    threads: 4
+    conda:
+        "/home/azoopatel/miniconda3/envs/snakemake/",
+    resources:
+        walltime=48,
+    shell:
+        "module load GenomeAnalysisTK && "
+        "gatk {params.java} CalculateGenotypePosteriors "
+        "-V {input.vcf} "
+        "-O {output.vcf} "
+        "-supporting {input.hapmap} "
+        "-ped {input.ped} "
+        "-L chr{params.chr} > {log.o} 2> {log.e}"
+
+rule DNM_annotation:
+    input:
+        ped="../input/trios.ped",
+        vcf="../output/merged_vcfs/CGP/joint.multisplit.VQSR.CGP.chr{chrom}.vcf.gz",        
+    output:
+        vcf="../output/merged_vcfs/DNM_annotation/joint.multisplit.VQSR.CGP.ann.chr{chrom}.vcf.gz",
+    params:
+        chr="{chrom}",
+        java="--java-options \"-Xmx4G \"",
+    log:
+        o="../logs/DNM_annotation/chr{chrom}.log",
+        e="../logs/DNM_annotation/chr{chrom}.err",
+    threads: 4
+    conda:
+        "/home/azoopatel/miniconda3/envs/snakemake/",
+    resources:
+        walltime=48,
+    shell:
+        "module load GenomeAnalysisTK && "
+        "/home/hiyoothere/miniconda3/envs/snakemake/bin/gatk {params.java} VariantAnnotator "
+        "-V {input.vcf} "
+        "-O {output.vcf} "
+        "--pedigree {input.ped} "
+        "--annotation PossibleDeNovo "
+        "--annotation ClippingRankSumTest "
+        "-L chr{params.chr} > {log.o} 2> {log.e}"
+    
+rule VEP:
+    input:
+        vcf="../output/merged_vcfs/DNM_annotation/joint.multisplit.VQSR.CGP.ann.chr{chrom}.vcf.gz",
+        hapmap="../resources/hapmap_3.3.hg38.vcf.gz",
+        ref="../resources/Homo_sapiens_assembly38.fasta",
+    output:
+        vcf="../output/merged_vcfs/VEP/joint.multisplit.VQSR.CGP.ann.vep.chr{chrom}.vcf",
+    params:
+        config="VEP_CONFIG.sh",
+        dir="/projects/ps-gleesonlab7/gleeson3/resources/vep_106",
+        plugin="dbNSFP,/projects/ps-gleesonlab7/gleeson3/resources/dbnsfp/dbNSFP4.1a.gz,CADD_phred,MetaSVM_pred,MetaSVM_rankscore,Polyphen2_HDIV_score,SIFT_pred,MPC,MTR,pLI,pLI_values,gnomAD_exomes_AC,gnomAD_exomes_AF,gnomAD_exomes_AN,SplicAI,SpliceRegion,DisGeNET,Phenotypes,Mastermind",
+        plugin_dir="/projects/ps-gleesonlab7/gleeson3/resources/vep_110/plugins",
+    log:
+        o="../logs/VEP/chr{chrom}.log",
+        e="../logs/VEP/chr{chrom}.err",
+    threads: 1
+    conda:
+        "/home/azoopatel/miniconda3/envs/snakemake/",
+    resources:
+        walltime=48,
+    shell:
+        "module load GenomeAnalysisTK && "
+        "module load samtools && "
+        "source {params.config} && "
+        "perl {params.dir}/ensembl-vep/vep "
+        "-v -assembly \"GRCh38\" --everything --terms \"SO\" "
+        "--cache "
+        "--canonical "
+        "--tsl "
+        "--dir_cache {params.dir} "
+        "--offline "
+        "--dir {params.dir} "
+        "-s homo_sapiens "
+        "--format \"vcf\" "
+        "--dir_plugins {params.plugin_dir} "
+        "--plugin {params.plugin} "
+        "--fasta {input.ref} "
+        "--vcf "
+        "-i {input.vcf} "
+        "--force_overwrite "
+        "-o {output.vcf} > {log.o} 2> {log.e}"
+
+rule DNM_filter:
+    input:
+        "../output/merged_vcfs/VEP/joint.multisplit.VQSR.CGP.ann.vep.chr{chrom}.vcf",
+    output:
+        "../output/merged_vcfs/VEP/joint.multisplit.VQSR.CGP.ann.vep.DNM.chr{chrom}.vcf.gz",
+    log:
+        "../logs/DNM_filter/chr{chrom}.err",
+    threads: 1
+    conda:
+        "/home/azoopatel/miniconda3/envs/snakemake/",
+    resources:
+        walltime=48,
+    shell:
+        "module load samtools && "
+        "egrep \"#|DeNovo\" {input} | bgzip > {output} 2> {log} && "
+        "tabix -p vcf {output}"
+
+rule spliceAI:
+    input:
+        vcf="../output/merged_vcfs/VEP/joint.multisplit.VQSR.CGP.ann.vep.DNM.chr{chrom}.vcf.gz",
+        ref="../resources/Homo_sapiens_assembly38.fasta",
+    output:
+        "../output/merged_vcfs/SpliceAI/joint.multisplit.VQSR.CGP.ann.vep.DNM.spliceAI.chr{chrom}.vcf.gz",
+    log:
+        o="../logs/SpliceAI/chr{chrom}.log",
+        e="../logs/SpliceAI/chr{chrom}.err",
+    threads: 4
+    singularity:
+        "/projects/ps-gleesonlab8/Pipelines/singularity/single_tools/spiceAI.sif",
+    resources:
+        walltime=8,
+    params:
+        genome_build="grch38",
+    shell:
+        "spliceai -I {input.vcf} -O {output} -R {input.ref} "
+        "-A {params.genome_build} > {log.o} 2> {log.e}"
+
+rule greenvaran_gunzip:
+    input:
+        "../output/merged_vcfs/SpliceAI/joint.multisplit.VQSR.CGP.ann.vep.DNM.spliceAI.chr{chrom}.vcf.gz",
+    output:
+        "../output/merged_vcfs/SpliceAI/joint.multisplit.VQSR.CGP.ann.vep.DNM.spliceAI.chr{chrom}.vcf",
+    shell:
+        "gunzip -c {input} > {output}"
+
+rule greenvaran:
+    input:
+        vcf="../output/merged_vcfs/SpliceAI/joint.multisplit.VQSR.CGP.ann.vep.DNM.spliceAI.chr{chrom}.vcf",
+        db="../resources/GRCh38_GREEN-DB.bed.gz",
+        dbschema="../resources/greendb_schema_v2.5.json",
+        config="../resources/prioritize_smallvars.json",
+    output:
+        vcf="../output/merged_vcfs/greenvaran/joint.multisplit.VQSR.CGP.ann.vep.DNM.spliceAI.chr{chrom}.annotated.vcf.gz",
+    #singularity:
+    #    "/projects/ps-gleesonlab8/User/arzoo/NTD_WGS_GMKF/SV_pipeline/resources/greenvaran.sif",
+    conda:
+        "/home/azoopatel/miniconda3/envs/nextflow/",
+    log:
+        o="../logs/greenvaran/chr{chrom}.log",
+        e="../logs/greenvaran/chr{chrom}.err",
+    threads: 4
+    resources:
+        walltime=8,
+    params:
+        greenvaran="/home/azoopatel/tools/GREEN-VARAN/workflow/main.nf",
+        dir="../output/merged_vcfs/greenvaran/",
+        chrom="{chrom}",
+    shell:
+        "nextflow {params.greenvaran} --input {input.vcf} "
+        "--build GRCh38 --out {params.dir} --scores all "
+        "--regions all --AF --greenvaran_config {input.config} "
+        "--greenvaran_dbschema {input.dbschema} --chrom {params.chrom}"
+
+rule greenvaran_combine:
+    input:
+        expand("../output/merged_vcfs/greenvaran/joint.multisplit.VQSR.CGP.ann.vep.DNM.spliceAI.chr{chrom}.annotated.vcf.gz",chrom=chroms),
+    output:
+        "../output/merged_vcfs/greenvaran/joint.multisplit.VQSR.CGP.ann.vep.DNM.spliceAI.annotated.vcf.gz",
+    shell:
+        "bcftools concat {input} -O z -o {output} && "
+        "tabix -p vcf {output}"
+
+rule generate_avinput:
+    input:
+        "../output/merged_vcfs/greenvaran/joint.multisplit.VQSR.CGP.ann.vep.DNM.spliceAI.annotated.vcf.gz",
+    output:
+        "../output/merged_vcfs/annovar/joint.multisplit.VQSR.CGP.ann.vep.DNM.spliceAI.annotated.avinput",
+    shell:
+        #""" zgrep -v "##" {input} | """
+        """ zcat {input} | """
+        """ awk -v OFS="\\t" "\$5!~/,/ {{print \$1, \$2, \$2+length(\$4)-1, \$4, \$5, \$0}}"  """
+        """ >> {output} """
+
+rule annovar_gnomad:
+    input:
+        "../output/merged_vcfs/annovar/joint.multisplit.VQSR.CGP.ann.vep.DNM.spliceAI.annotated.avinput",
+    output:
+        "../output/merged_vcfs/annovar/joint.multisplit.VQSR.CGP.ann.vep.DNM.spliceAI.annotated.hg38_multianno.txt",
+    params:
+        prefix="../output/merged_vcfs/annovar/joint.multisplit.VQSR.CGP.ann.vep.DNM.spliceAI.annotated"
+    shell:
+        "/home/jis215/tools/annovar/table_annovar.pl {input} "
+        "/home/jis215/tools/annovar/humandb/ -buildver hg38 "
+        "-out {params.prefix} -remove -protocol gnomad312_genome "
+        "-operation f -nastring . -otherinfo"
+
+rule sperate_header:
+    input:
+        "../output/merged_vcfs/greenvaran/joint.multisplit.VQSR.CGP.ann.vep.DNM.spliceAI.annotated.vcf.gz",
+    output:
+        "../output/merged_vcfs/greenvaran/joint.multisplit.VQSR.CGP.ann.vep.DNM.spliceAI.annotated.vcf.header",
+    shell:
+        "zcat {input} | grep '#' > {output}"
+
+rule seperate_gnaomad:
+    input:
+        "../output/merged_vcfs/annovar/joint.multisplit.VQSR.CGP.ann.vep.DNM.spliceAI.annotated.hg38_multianno.txt",
+    output:
+        "../output/merged_vcfs/annovar/joint.multisplit.VQSR.CGP.ann.vep.DNM.spliceAI.annotated.hg38_multianno.txt.gnomad",
+    shell:
+        "grep -v \"##\" {input} | cut -f 6 > {output}"
+
+rule seperate_vcf:
+    input:
+        "../output/merged_vcfs/annovar/joint.multisplit.VQSR.CGP.ann.vep.DNM.spliceAI.annotated.hg38_multianno.txt",
+    output:
+        "../output/merged_vcfs/annovar/joint.multisplit.VQSR.CGP.ann.vep.DNM.spliceAI.annotated.hg38_multianno.txt.vcf",
+    shell:
+        "grep -v \"##\" {input} | cut -f 22- > {output}"
+
+rule reorder:
+    input:
+        gnomad="../output/merged_vcfs/annovar/joint.multisplit.VQSR.CGP.ann.vep.DNM.spliceAI.annotated.hg38_multianno.txt.gnomad",
+        vcf="../output/merged_vcfs/annovar/joint.multisplit.VQSR.CGP.ann.vep.DNM.spliceAI.annotated.hg38_multianno.txt.vcf",
+    output:
+        "../output/merged_vcfs/annovar/joint.multisplit.VQSR.CGP.ann.vep.DNM.spliceAI.annotated.hg38_multianno.txt.reorder",
+    shell:
+        "paste {input.vcf} {input.gnomad} | grep -v Otherinfo1 > {output}"
+
+rule add_header:
+    input:
+        header="../output/merged_vcfs/greenvaran/joint.multisplit.VQSR.CGP.ann.vep.DNM.spliceAI.annotated.vcf.header",
+        vcf="../output/merged_vcfs/annovar/joint.multisplit.VQSR.CGP.ann.vep.DNM.spliceAI.annotated.hg38_multianno.txt.reorder",
+    output:
+        "../output/merged_vcfs/annovar/joint.multisplit.VQSR.CGP.ann.vep.DNM.spliceAI.annotated.hg38_multianno.txt.reorder.vcf",
+    shell:
+        "cat {input.header} {input.vcf} > {output}"
