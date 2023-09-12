@@ -2,7 +2,7 @@
 pipeline for variant calling, DNM filtering, and annotating WGS data
 
 ## Code Location
-``
+`/projects/ps-gleesonlab8/User/arzoo/20230901_organized_code/pipelines/DNM_WGS/WGS_DNM`
 
 ## Setup
 in the `resources` folder
