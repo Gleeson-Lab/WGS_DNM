@@ -31,6 +31,7 @@ intervals/
 
 ## Running it
 - run from the workflow folder using snakemake
+  - make sure to include `--use-conda --use-singularity --singularity-args "-B /path/to/mounts/"` (replace `/path/to/mounts/` with all mounts that singularity needs to access
 - after snakemake finished use the jupyter notebook to create a table of the most likely important variants
   - you may need to edit the parameters of the jupyter notebook to be better for your data
 
