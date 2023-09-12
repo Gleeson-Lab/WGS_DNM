@@ -36,7 +36,7 @@ intervals/
   - you may need to edit the parameters of the jupyter notebook to be better for your data
 
 ## General Workflow
-- Starting from cram
+- Starting from BQSRed cram
 - Variant calling
   - Haplotype caller
   - combine , genotype, and merge gvcfs
