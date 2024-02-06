@@ -2,11 +2,13 @@
 pipeline for variant calling, DNM filtering, and annotating WGS data
 
 ## Code Location
-`/projects/ps-gleesonlab8/User/arzoo/20230901_organized_code/pipelines/DNM_WGS/WGS_DNM`
+`/tscc/projects/ps-gleesonlab7/Pipeline_tscc2.0/NTD_WGS/WGS_DNM`
+
+~~`/projects/ps-gleesonlab8/User/arzoo/20230901_organized_code/pipelines/DNM_WGS/WGS_DNM`~~
 
 ## Setup
 in the `resources` folder
-- Copy the following resource files and their indices from `/projects/ps-gleesonlab7/gleeson3/resources/hg38/`
+- Copy the following resource files and their indices from `/tscc/projects/ps-gleesonlab7/gleeson3/resources/hg38/`
 ```
 Axiom_Exome_Plus.genotypes.all_populations.poly.hg38.vcf.gz
 dbsnp_146.hg38.vcf.gz
@@ -16,7 +18,7 @@ Mills_and_1000G_gold_standard.indels.hg38.vcf.gz
 Homo_sapiens_assembly38.fasta
 1000G_phase1.snps.high_confidence.hg38.vcf.gz
 ```
-- Copy these from `/projects/ps-gleesonlab8/User/arzoo/20230810_Jiny_Rerun_DNM_WGS_GMKF/1.Processing/resources`
+- Copy these from `/tscc/projects/ps-gleesonlab8/User/arzoo/20230810_Jiny_Rerun_DNM_WGS_GMKF/1.Processing/resources`
 ```
 prioritize_smallvars.json
 GRCh38_GREEN-DB.bed.gz
