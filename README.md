@@ -32,6 +32,7 @@ intervals/
 - `trios.list` sample names newline separated
 
 ## Running it
+- before running the snakefile: `module load singularitypro`
 - run from the workflow folder using snakemake
   - make sure to include `--use-conda --use-singularity --singularity-args "-B /path/to/mounts/"` (replace `/path/to/mounts/` with all mounts that singularity needs to access
 - after snakemake finished use the jupyter notebook to create a table of the most likely important variants
