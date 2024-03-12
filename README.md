@@ -65,12 +65,12 @@ Multiallelic split
 - These are usually condensed into 1 row called a multiallelic variant 
 
 
-## Improvements
-- [ ] Updated gnomad annotations in VEP modules to remove last step
-- [ ] Make singularity containers for greenvaran, spliceAI
-- [ ] SpliceAI efficiency might improve by using gpu nodes
-- [ ] Generalize and add cookiecutter like the WXS and RNAseq pipelines
-- [ ] Reduce reliance on conda environments as much as possible
-- [ ] Move variant annotation before DNM filter so that the QQ plot pipeline can be more useful
-- [ ] Add rule for automatically copying resources
-- [ ] Clean up jupyter notebook
+~~## Improvements~~
+~~- [ ] Updated gnomad annotations in VEP modules to remove last step~~
+~~- [ ] Make singularity containers for greenvaran, spliceAI~~
+~~- [ ] SpliceAI efficiency might improve by using gpu nodes~~
+~~- [ ] Generalize and add cookiecutter like the WXS and RNAseq pipelines~~
+~~- [ ] Reduce reliance on conda environments as much as possible~~
+~~- [ ] Move variant annotation before DNM filter so that the QQ plot pipeline can be more useful~~
+~~- [ ] Add rule for automatically copying resources~~
+~~- [ ] Clean up jupyter notebook~~
