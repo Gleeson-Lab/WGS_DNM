@@ -24,6 +24,7 @@ Homo_sapiens_assembly38.dict
 prioritize_smallvars.json
 GRCh38_GREEN-DB.bed.gz
 greendb_schema_v2.5.json
+Homo_sapiens_assembly38.fasta.index
 intervals/
 ```
 
