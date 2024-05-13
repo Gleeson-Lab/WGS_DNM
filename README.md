@@ -17,6 +17,7 @@ Mills_and_1000G_gold_standard.indels.hg38.vcf.gz
 1000G_omni2.5.hg38.vcf.gz
 Homo_sapiens_assembly38.fasta
 1000G_phase1.snps.high_confidence.hg38.vcf.gz
+Homo_sapiens_assembly38.dict
 ```
 - Copy these from `/tscc/projects/ps-gleesonlab8/User/arzoo/20230810_Jiny_Rerun_DNM_WGS_GMKF/1.Processing/resources`
 ```
